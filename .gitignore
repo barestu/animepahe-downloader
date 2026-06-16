@@ -1,0 +1,6 @@
+/dist
+/apahe
+/animepahe-downloader
+*.mp4
+*.mkv
+*.ts
