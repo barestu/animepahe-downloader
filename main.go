@@ -6,15 +6,27 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 
+	"github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/barestu/animepahe-downloader/internal/app"
 	"github.com/barestu/animepahe-downloader/internal/config"
 	"github.com/spf13/cobra"
 )
 
+// version is overwritten at release time via -ldflags "-X main.version=...".
+var version = "dev"
+
 func main() {
+	// Cancel the root context on ctrl+c so an in-flight download (and the whole
+	// run) stops cleanly instead of erroring out per-episode.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
 	var (
 		baseURL   string
 		cookie    string
@@ -23,8 +35,9 @@ func main() {
 	)
 
 	root := &cobra.Command{
-		Use:   "apahe",
-		Short: "Search and download anime from AnimePahe",
+		Use:     "apahe",
+		Short:   "Search and download anime from AnimePahe",
+		Version: version,
 		Long: "Search and download anime from AnimePahe.\n\n" +
 			"Run with no flags for an interactive session. Base URLs rotate; override\n" +
 			"with --base-url, ANIMEPAHE_BASE_URL, or ~/.config/animepahe-dl/config.json.",
@@ -37,7 +50,7 @@ func main() {
 			if userAgent != "" {
 				cfg.UserAgent = userAgent
 			}
-			return app.Run(cfg, opt)
+			return app.Run(cmd.Context(), cfg, opt)
 		},
 	}
 
@@ -54,7 +67,12 @@ func main() {
 	f.BoolVar(&opt.Resume, "resume", false, "resume partial downloads (direct mp4 only)")
 	f.BoolVar(&opt.Verbose, "debug", false, "show raw ffmpeg log instead of a progress bar")
 
-	if err := root.Execute(); err != nil {
+	if err := root.ExecuteContext(ctx); err != nil {
+		// ctrl+c at a prompt returns terminal.InterruptErr; ctrl+c mid-download
+		// cancels ctx. Either way exit 130 (SIGINT) silently, no "error:" line.
+		if errors.Is(err, terminal.InterruptErr) || ctx.Err() != nil {
+			os.Exit(130)
+		}
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}

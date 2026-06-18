@@ -3,6 +3,7 @@
 package download
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -13,8 +14,9 @@ import (
 )
 
 // Direct streams mediaURL to outPath with a progress bar. If resume is set and
-// a partial file exists, it requests the remaining byte range and appends.
-func Direct(c *client.Client, mediaURL, referer, outPath string, resume bool) error {
+// a partial file exists, it requests the remaining byte range and appends. ctx
+// cancellation (ctrl+c) closes the response body to unblock the copy.
+func Direct(ctx context.Context, c *client.Client, mediaURL, referer, outPath string, resume bool) error {
 	extra := map[string]string{}
 	if referer != "" {
 		extra["referer"] = referer
@@ -33,6 +35,11 @@ func Direct(c *client.Client, mediaURL, referer, outPath string, resume bool) er
 		return err
 	}
 	defer resp.Body.Close()
+
+	// The underlying client isn't ctx-aware; close the body on cancel so the
+	// io.Copy below returns instead of blocking until the download finishes.
+	stop := context.AfterFunc(ctx, func() { resp.Body.Close() })
+	defer stop()
 
 	switch resp.StatusCode {
 	case http.StatusOK:
