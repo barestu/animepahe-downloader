@@ -3,6 +3,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,7 +31,7 @@ type Options struct {
 }
 
 // Run executes the flow. cfg.BaseURLs is tried in order until one answers.
-func Run(cfg config.Config, opt Options) error {
+func Run(ctx context.Context, cfg config.Config, opt Options) error {
 	c, err := client.New(cfg.UserAgent)
 	if err != nil {
 		return err
@@ -39,17 +40,11 @@ func Run(cfg config.Config, opt Options) error {
 		_ = c.SetCookies(base, cfg.Cookie)
 	}
 
-	// Ask for the search term first so an interactive run shows a prompt
-	// immediately, instead of appearing frozen during the base-URL probe.
 	interactive := opt.Query == ""
-	query := opt.Query
-	if query == "" {
-		query, err = ui.AskInput("Search anime:", "")
-		if err != nil {
-			return err
-		}
-	}
 
+	// Probe for a working base URL (and clear any Cloudflare challenge) before
+	// prompting for a search term, so the user doesn't type a query only to hit
+	// a 403 wall. The probe prints per-base progress, so the run isn't silent.
 	api, err := resolveAPI(c, cfg.BaseURLs)
 	// On a Cloudflare challenge during an interactive run, let the user paste a
 	// cf_clearance cookie + User-Agent. Apply them to the live client (no
@@ -81,6 +76,14 @@ func Run(cfg config.Config, opt Options) error {
 		return err
 	}
 	fmt.Fprintf(os.Stderr, "using base url: %s\n", api.BaseURL())
+
+	query := opt.Query
+	if query == "" {
+		query, err = ui.AskInput("Search anime:", "")
+		if err != nil {
+			return err
+		}
+	}
 
 	results, err := api.Search(query)
 	if err != nil {
@@ -136,6 +139,9 @@ func Run(cfg config.Config, opt Options) error {
 	// Quality is chosen once (interactively from the first episode) and reused.
 	var pinned *animepahe.Quality
 	for _, ep := range chosen {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		qualities, err := api.Links(anime.Session, ep.Session)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "ep %g: links error: %v\n", ep.Episode, err)
@@ -151,7 +157,7 @@ func Run(cfg config.Config, opt Options) error {
 			return err
 		}
 
-		name := fmt.Sprintf("%s - %s.mp4", sanitize(anime.Title), episodeLabel(ep))
+		name := fmt.Sprintf("%s - %s - %sp.mp4", sanitize(anime.Title), episodeLabel(ep), q.Resolution)
 		outPath := filepath.Join(outDir, name)
 
 		if opt.Export {
@@ -165,9 +171,12 @@ func Run(cfg config.Config, opt Options) error {
 		}
 
 		fmt.Fprintf(os.Stderr, "ep %g -> %s [%sp %s]\n", ep.Episode, name, q.Resolution, q.Audio)
-		if err := withRetry(3, func() error {
-			return download.Episode(c, q, api.BaseURL(), outPath, cfg.UserAgent, opt.Resume, opt.Verbose)
+		if err := withRetry(ctx, 3, func() error {
+			return download.Episode(ctx, c, q, api.BaseURL(), outPath, cfg.UserAgent, opt.Resume, opt.Verbose)
 		}); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			fmt.Fprintf(os.Stderr, "ep %g: download failed: %v\n", ep.Episode, err)
 		}
 	}
@@ -269,11 +278,15 @@ func extreme(qs []animepahe.Quality, max bool) animepahe.Quality {
 	return best
 }
 
-func withRetry(attempts int, fn func() error) error {
+func withRetry(ctx context.Context, attempts int, fn func() error) error {
 	var err error
 	for i := 0; i < attempts; i++ {
 		if err = fn(); err == nil {
 			return nil
+		}
+		// ctrl+c cancelled the run — stop, don't retry.
+		if ctx.Err() != nil {
+			return err
 		}
 		// A missing ffmpeg won't fix itself — fail fast instead of retrying.
 		if strings.Contains(err.Error(), "ffmpeg not found") {

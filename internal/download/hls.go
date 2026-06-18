@@ -2,6 +2,7 @@ package download
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,7 +18,7 @@ import (
 //
 // totalSeconds is the playlist duration (0 if unknown) used to render a percent
 // progress bar. When verbose is true the raw ffmpeg log is shown instead.
-func HLS(m3u8URL, referer, userAgent, outPath string, totalSeconds float64, verbose bool) error {
+func HLS(ctx context.Context, m3u8URL, referer, userAgent, outPath string, totalSeconds float64, verbose bool) error {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		return fmt.Errorf("ffmpeg not found on PATH (required for HLS streams)")
 	}
@@ -26,7 +27,7 @@ func HLS(m3u8URL, referer, userAgent, outPath string, totalSeconds float64, verb
 
 	if verbose {
 		args = append(args, outPath)
-		cmd := exec.Command("ffmpeg", args...)
+		cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
@@ -37,7 +38,7 @@ func HLS(m3u8URL, referer, userAgent, outPath string, totalSeconds float64, verb
 
 	// Quiet mode: machine-readable progress on stdout, errors on stderr.
 	args = append(args, "-loglevel", "error", "-progress", "pipe:1", "-nostats", outPath)
-	cmd := exec.Command("ffmpeg", args...)
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	cmd.Stderr = os.Stderr
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

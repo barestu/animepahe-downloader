@@ -1,6 +1,7 @@
 package download
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -47,8 +48,9 @@ func Resolve(c *client.Client, q animepahe.Quality, referer string) (Resolved, e
 }
 
 // Episode resolves q and downloads it to outPath. outPath should end in .mp4.
-// verbose shows the raw ffmpeg log (HLS) instead of a progress bar.
-func Episode(c *client.Client, q animepahe.Quality, referer, outPath, userAgent string, resume, verbose bool) error {
+// verbose shows the raw ffmpeg log (HLS) instead of a progress bar. ctx cancels
+// an in-flight download (e.g. on ctrl+c).
+func Episode(ctx context.Context, c *client.Client, q animepahe.Quality, referer, outPath, userAgent string, resume, verbose bool) error {
 	r, err := Resolve(c, q, referer)
 	if err != nil {
 		return err
@@ -61,9 +63,9 @@ func Episode(c *client.Client, q animepahe.Quality, referer, outPath, userAgent 
 		// not the AnimePahe one.
 		const kwikRef = "https://kwik.cx/"
 		dur := playlistDuration(c, r.URL, kwikRef)
-		return HLS(r.URL, kwikRef, userAgent, outPath, dur, verbose)
+		return HLS(ctx, r.URL, kwikRef, userAgent, outPath, dur, verbose)
 	}
-	return Direct(c, r.URL, referer, outPath, resume)
+	return Direct(ctx, c, r.URL, referer, outPath, resume)
 }
 
 // playlistDuration fetches an m3u8 and sums its #EXTINF durations (seconds).
