@@ -44,7 +44,7 @@ func Run(ctx context.Context, cfg config.Config, opt Options) error {
 
 	// Probe for a working base URL (and clear any Cloudflare challenge) before
 	// prompting for a search term, so the user doesn't type a query only to hit
-	// a 403 wall. The probe prints per-base progress, so the run isn't silent.
+	// a 403 wall. The probe is quiet; the selected base is printed once below.
 	api, err := resolveAPI(c, cfg.BaseURLs)
 	// On a Cloudflare challenge during an interactive run, let the user paste a
 	// cf_clearance cookie + User-Agent. Apply them to the live client (no
@@ -138,6 +138,7 @@ func Run(ctx context.Context, cfg config.Config, opt Options) error {
 
 	// Quality is chosen once (interactively from the first episode) and reused.
 	var pinned *animepahe.Quality
+	var done int
 	for _, ep := range chosen {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -178,7 +179,13 @@ func Run(ctx context.Context, cfg config.Config, opt Options) error {
 				return ctx.Err()
 			}
 			fmt.Fprintf(os.Stderr, "ep %g: download failed: %v\n", ep.Episode, err)
+			continue
 		}
+		done++
+		fmt.Fprintf(os.Stderr, "ep %g: done\n", ep.Episode)
+	}
+	if !opt.Export {
+		fmt.Fprintf(os.Stderr, "complete: %d/%d episodes downloaded -> %s\n", done, len(chosen), outDir)
 	}
 	return nil
 }
@@ -190,14 +197,11 @@ func resolveAPI(c *client.Client, bases []string) (*animepahe.API, error) {
 	challenged := false
 	fmt.Fprintln(os.Stderr, "resolving working base url...")
 	for _, base := range bases {
-		fmt.Fprintf(os.Stderr, "  probing %s ... ", base)
 		api := animepahe.New(c, base)
 		_, err := api.Search("a")
 		if err == nil {
-			fmt.Fprintln(os.Stderr, "ok")
 			return api, nil
 		}
-		fmt.Fprintf(os.Stderr, "%v\n", err)
 		lastErr = err
 		if strings.Contains(err.Error(), "403") {
 			challenged = true

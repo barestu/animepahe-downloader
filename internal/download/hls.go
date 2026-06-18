@@ -8,8 +8,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-
-	"github.com/schollz/progressbar/v3"
+	"time"
 )
 
 // HLS downloads an m3u8 playlist to outPath (mp4) using ffmpeg. ffmpeg pulls and
@@ -54,26 +53,21 @@ func HLS(ctx context.Context, m3u8URL, referer, userAgent, outPath string, total
 	return nil
 }
 
-// renderProgress reads ffmpeg's -progress stream and drives a progress bar.
-// ffmpeg emits blocks of key=value lines ending in "progress=continue|end".
+// renderProgress reads ffmpeg's -progress stream and prints a single
+// self-overwriting status line (percent + downloaded size + speed). ffmpeg emits
+// blocks of key=value lines ending in "progress=continue|end". Download speed is
+// derived from the change in total_size over wall-clock time between blocks
+// (ffmpeg's own speed= key is encode-x-realtime, not bytes/sec).
 func renderProgress(r interface{ Read([]byte) (int, error) }, totalSeconds float64) {
-	var bar *progressbar.ProgressBar
-	if totalSeconds > 0 {
-		bar = progressbar.NewOptions(1000,
-			progressbar.OptionSetDescription("downloading"),
-			progressbar.OptionSetWriter(os.Stderr),
-			progressbar.OptionSetRenderBlankState(true),
-			progressbar.OptionClearOnFinish(),
-		)
-	} else {
-		bar = progressbar.NewOptions(-1,
-			progressbar.OptionSetDescription("downloading"),
-			progressbar.OptionSetWriter(os.Stderr),
-		)
-	}
-
 	var curSeconds float64
 	var sizeBytes int64
+	var lastSize int64
+	start := time.Now()
+	lastTime := start
+	var speed float64 // bytes/sec
+
+	const clearLine = "\r\033[K"
+
 	sc := bufio.NewScanner(r)
 	for sc.Scan() {
 		line := sc.Text()
@@ -91,26 +85,52 @@ func renderProgress(r interface{ Read([]byte) (int, error) }, totalSeconds float
 				sizeBytes = n
 			}
 		case "progress":
+			now := time.Now()
+			if dt := now.Sub(lastTime).Seconds(); dt > 0 {
+				speed = float64(sizeBytes-lastSize) / dt
+			}
+			lastSize, lastTime = sizeBytes, now
+
 			if totalSeconds > 0 {
 				frac := curSeconds / totalSeconds
 				if frac > 1 {
 					frac = 1
 				}
-				_ = bar.Set(int(frac * 1000))
-				est := int64(0)
+				pct := frac * 100
+				est := int64(0)        // projected total file size
+				eta := time.Duration(0) // time left
 				if frac > 0 {
 					est = int64(float64(sizeBytes) / frac)
+					eta = time.Duration((totalSeconds-curSeconds)/curSeconds*now.Sub(start).Seconds()) * time.Second
 				}
-				bar.Describe(fmt.Sprintf("downloading %s / ~%s", humanSize(sizeBytes), humanSize(est)))
+				fmt.Fprintf(os.Stderr, "%sdownloading %.0f%% %s / ~%s %s/s ETA %s",
+					clearLine, pct, humanSize(sizeBytes), humanSize(est), humanSize(int64(speed)), fmtDuration(eta))
 			} else {
-				_ = bar.Add64(0)
-				bar.Describe(fmt.Sprintf("downloading %s", humanSize(sizeBytes)))
+				fmt.Fprintf(os.Stderr, "%sdownloading %s %s/s", clearLine, humanSize(sizeBytes), humanSize(int64(speed)))
 			}
 			if val == "end" {
-				_ = bar.Finish()
+				fmt.Fprint(os.Stderr, clearLine)
 			}
 		}
 	}
+	// A scanner error just means we stopped drawing progress early; the actual
+	// download success/failure is decided by cmd.Wait() in HLS.
+	if err := sc.Err(); err != nil {
+		fmt.Fprintf(os.Stderr, "%sprogress read error: %v\n", clearLine, err)
+	}
+}
+
+// fmtDuration renders a duration as M:SS (or H:MM:SS past an hour).
+func fmtDuration(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	total := int(d.Seconds())
+	h, m, s := total/3600, (total%3600)/60, total%60
+	if h > 0 {
+		return fmt.Sprintf("%d:%02d:%02d", h, m, s)
+	}
+	return fmt.Sprintf("%d:%02d", m, s)
 }
 
 func humanSize(b int64) string {
