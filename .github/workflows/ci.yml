@@ -20,3 +20,25 @@ jobs:
       - run: go vet ./...
       - run: go build -o apahe .
       - run: go test ./...
+
+  release-dryrun:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+      # Validate .goreleaser.yaml and build every platform binary without
+      # publishing, so a broken release config fails here on PRs instead of
+      # mid-release after a tag is already pushed.
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          args: check
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          args: release --snapshot --clean
