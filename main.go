@@ -42,7 +42,8 @@ func main() {
 		Long: "Search and download anime from AnimePahe.\n\n" +
 			"Run with no flags for an interactive session. Base URLs rotate; override\n" +
 			"with --base-url, ANIMEPAHE_BASE_URL, or ~/.config/animepahe-dl/config.json.",
-		SilenceUsage: true,
+		SilenceUsage:  true,
+		SilenceErrors: true, // main prints the error once; avoid cobra's duplicate "Error:" line
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := config.Load(baseURL)
 			if cookie != "" {
