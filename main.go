@@ -16,6 +16,7 @@ import (
 	"github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/barestu/animepahe-downloader/internal/app"
 	"github.com/barestu/animepahe-downloader/internal/config"
+	"github.com/barestu/animepahe-downloader/internal/upgrade"
 	"github.com/spf13/cobra"
 )
 
@@ -70,6 +71,7 @@ func main() {
 	f.BoolVar(&opt.Verbose, "debug", false, "show raw ffmpeg log instead of a progress bar")
 
 	root.AddCommand(configCmd())
+	root.AddCommand(upgradeCmd())
 
 	if err := root.ExecuteContext(ctx); err != nil {
 		// ctrl+c at a prompt returns terminal.InterruptErr; ctrl+c mid-download
@@ -136,4 +138,18 @@ func configCmd() *cobra.Command {
 	})
 
 	return cmd
+}
+
+// upgradeCmd builds the `apahe upgrade` subcommand: it checks GitHub for a newer
+// release and instructs the user how to install it. It does not self-replace the
+// binary, and runs only when invoked explicitly (never during a download).
+func upgradeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "upgrade",
+		Short: "Check for a newer release and how to install it",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return upgrade.Report(cmd.Context(), os.Stdout, version)
+		},
+	}
 }
