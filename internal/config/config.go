@@ -6,6 +6,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,27 +48,21 @@ func Load(flagBaseURL string) Config {
 	}
 
 	// File overrides defaults.
-	if path := ConfigPath(); path != "" {
-		if b, err := os.ReadFile(path); err == nil {
-			var fileCfg Config
-			if json.Unmarshal(b, &fileCfg) == nil {
-				if len(fileCfg.BaseURLs) > 0 {
-					cfg.BaseURLs = fileCfg.BaseURLs
-				}
-				if fileCfg.OutputDir != "" {
-					cfg.OutputDir = fileCfg.OutputDir
-				}
-				if fileCfg.UserAgent != "" {
-					cfg.UserAgent = fileCfg.UserAgent
-				}
-				if fileCfg.Concurrency > 0 {
-					cfg.Concurrency = fileCfg.Concurrency
-				}
-				if fileCfg.Cookie != "" {
-					cfg.Cookie = fileCfg.Cookie
-				}
-			}
-		}
+	fileCfg := loadFile()
+	if len(fileCfg.BaseURLs) > 0 {
+		cfg.BaseURLs = fileCfg.BaseURLs
+	}
+	if fileCfg.OutputDir != "" {
+		cfg.OutputDir = fileCfg.OutputDir
+	}
+	if fileCfg.UserAgent != "" {
+		cfg.UserAgent = fileCfg.UserAgent
+	}
+	if fileCfg.Concurrency > 0 {
+		cfg.Concurrency = fileCfg.Concurrency
+	}
+	if fileCfg.Cookie != "" {
+		cfg.Cookie = fileCfg.Cookie
 	}
 
 	// Env overrides file. Comma-separated list allowed.
@@ -91,6 +86,57 @@ func Load(flagBaseURL string) Config {
 		cfg.BaseURLs[i] = strings.TrimRight(strings.TrimSpace(u), "/")
 	}
 	return cfg
+}
+
+// loadFile reads only the JSON config file, with no defaults/env/flag merging.
+// A missing or unreadable file yields a zero-value Config (not an error), so
+// callers that mutate-and-Save don't bake built-in defaults into the file.
+func loadFile() Config {
+	var cfg Config
+	path := ConfigPath()
+	if path == "" {
+		return cfg
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return cfg
+	}
+	_ = json.Unmarshal(b, &cfg)
+	return cfg
+}
+
+// Set persists a single config key to the JSON file, preserving all other
+// existing keys (including an auto-saved cf_clearance cookie). It reads only
+// the file (loadFile), so it never writes built-in defaults or env values.
+// Supported keys: "output-dir", "base-url" (comma-separated list), "user-agent".
+func Set(key, value string) error {
+	cfg := loadFile()
+	switch key {
+	case "output-dir":
+		cfg.OutputDir = value
+	case "base-url":
+		cfg.BaseURLs = splitURLs(value)
+		for i, u := range cfg.BaseURLs {
+			cfg.BaseURLs[i] = strings.TrimRight(u, "/")
+		}
+	case "user-agent":
+		cfg.UserAgent = value
+	default:
+		return fmt.Errorf("unknown config key %q (valid: output-dir, base-url, user-agent)", key)
+	}
+	return Save(cfg)
+}
+
+// SaveCredentials persists a freshly-entered cf_clearance cookie + matching UA,
+// preserving other existing file keys. Routes through loadFile so it never
+// bakes built-in defaults or env-derived values permanently into the file.
+func SaveCredentials(cookie, userAgent string) error {
+	cfg := loadFile()
+	cfg.Cookie = cookie
+	if userAgent != "" {
+		cfg.UserAgent = userAgent
+	}
+	return Save(cfg)
 }
 
 // Save writes cfg to the JSON config file, creating the directory if needed.
