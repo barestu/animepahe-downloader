@@ -64,7 +64,7 @@ func Run(ctx context.Context, cfg config.Config, opt Options) error {
 				_ = c.SetCookies(base, cfg.Cookie)
 			}
 			if api, err = resolveAPI(c, cfg.BaseURLs); err == nil {
-				if serr := config.Save(cfg); serr != nil {
+				if serr := config.SaveCredentials(cfg.Cookie, cfg.UserAgent); serr != nil {
 					fmt.Fprintf(os.Stderr, "warning: could not save config: %v\n", serr)
 				} else {
 					fmt.Fprintf(os.Stderr, "saved cf_clearance + user-agent to %s\n", config.ConfigPath())
