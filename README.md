@@ -63,6 +63,20 @@ Scripted:
 First interactive run prompts for the Cloudflare cookie (see below) and saves it;
 after that a bare `./apahe` just asks for the search term.
 
+## Subcommands
+
+```sh
+./apahe config show              # print the effective configuration
+./apahe config path              # print the config file path
+./apahe config set output-dir ~/anime   # persist one key (output-dir, base-url, user-agent)
+./apahe upgrade                  # check GitHub for a newer release and how to install it
+```
+
+`config set` persists a single key without clobbering an auto-saved
+`cf_clearance` cookie. `upgrade` is check-and-instruct only — it reports whether
+a newer release exists and prints the `go install ...@latest` command; it never
+self-replaces the running binary.
+
 ## Configurable base URLs
 
 The site rotates domains. Defaults: `https://animepahe.pw`, `https://animepahe.com`,

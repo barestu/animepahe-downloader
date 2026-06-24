@@ -48,7 +48,12 @@ flowchart TD
 | `internal/kwik` | Resolves kwik.cx links. `unpack.go` reverses Dean-Edwards `p,a,c,k,e,d` JS (the unit-tested core); `resolve.go` scans **all** packed blocks because the `.m3u8` lives in a later one. |
 | `internal/download` | `Resolve` tries direct mp4, falls back to HLS. `hls.go` shells to ffmpeg with a **kwik** referer (the owocdn stream host gates on it). AES-128 keys are fetched by ffmpeg itself. |
 | `internal/app` | Wires it together: probe, prompts, episode/quality selection, retry, ctrl+c handling. |
-| `internal/config` | Precedence highest-first: flag > env > JSON file (`~/.config/animepahe-dl/config.json`, 0600) > defaults. |
+| `internal/config` | Precedence highest-first: flag > env > JSON file (`~/.config/animepahe-dl/config.json`, 0600) > defaults. Backs the `config set/show/path` subcommands. |
+| `internal/upgrade` | Backs `apahe upgrade`: queries the GitHub latest-release API and prints how to install a newer tag. Check-and-instruct only — never self-replaces the binary. |
+
+Two side subcommands sit outside the download flow: `apahe config` (set/show/path,
+backed by `internal/config`) and `apahe upgrade` (release check, backed by
+`internal/upgrade`).
 
 ## Cloudflare constraint
 

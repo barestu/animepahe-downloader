@@ -54,7 +54,16 @@ CLI that searches AnimePahe and downloads episodes. Flow lives in `internal/app/
    pinned once and reused; retry skips ffmpeg-missing (not transient).
 6. **`internal/config`** — precedence highest-first: flag > env
    (`ANIMEPAHE_BASE_URL`/`ANIMEPAHE_COOKIE`/`ANIMEPAHE_USER_AGENT`) > JSON file
-   (`~/.config/animepahe-dl/config.json`, written 0600) > defaults.
+   (`~/.config/animepahe-dl/config.json`, written 0600) > defaults. `Set`
+   persists one key (`output-dir`/`base-url`/`user-agent`) without clobbering an
+   auto-saved cookie; `SaveCredentials` writes the harvested cookie+UA.
+7. **`internal/upgrade`** — `apahe upgrade` subcommand. `Report` hits the GitHub
+   latest-release API and prints whether a newer tag exists plus the
+   `go install ...@latest` line. **Check-and-instruct only** — never
+   self-replaces the binary, runs only when invoked explicitly.
+
+`main.go` wires the cobra root plus two subcommand trees: `config` (set/show/path)
+and `upgrade`. Version is injected via `-ldflags "-X main.version=..."`.
 
 ## Cloudflare constraint (important)
 
